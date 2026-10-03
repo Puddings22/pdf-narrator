@@ -86,6 +86,7 @@ def generate_audio_for_file_kokoro(
     if pause_event: pause_event.wait() # Wait if paused
 
     audio_chunks = []
+    skipped_chunks = 0
     total_chars_in_file = len(text) # Approx total chars for this file
     chars_processed_in_file = 0
     start_synth_time = time.time()
@@ -100,6 +101,12 @@ def generate_audio_for_file_kokoro(
                 print("      Cancellation detected during audio synthesis.")
                 raise InterruptedError("Processing cancelled by user.")
             if pause_event: pause_event.wait() # Wait if paused
+
+            # Skip chunks with no letters or digits (e.g. a stray '".' or '—' line left by
+            # PDF extraction): Kokoro has nothing to pronounce and renders a short static burst.
+            if gs is not None and not re.search(r'[^\W_]', gs):
+                skipped_chunks += 1
+                continue
 
             # Process the audio chunk
             if isinstance(audio, torch.Tensor):
@@ -121,6 +128,9 @@ def generate_audio_for_file_kokoro(
         print(f"      Error during Kokoro pipeline processing for '{os.path.basename(input_path)}': {e}")
         traceback.print_exc() # Print detailed traceback for debugging
         return False # Indicate failure for this file
+
+    if skipped_chunks:
+        print(f"      Skipped {skipped_chunks} punctuation-only chunks.")
 
     if not audio_chunks:
         print(f"      Warning: No audio chunks generated for '{os.path.basename(input_path)}'.")
